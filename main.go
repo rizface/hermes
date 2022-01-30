@@ -178,7 +178,7 @@ func updateGitIgnore() {
 		if file.IsDir() && file.Name() != "seed" && file.Name() != ".git" {
 			gitIgnore,_ := os.OpenFile(".gitignore", os.O_CREATE|os.O_APPEND|os.O_WRONLY,0666)
 			defer gitIgnore.Close()
-			gitIgnore.Write([]byte(fmt.Sprintf("./%s/\n",file.Name())))
+			gitIgnore.Write([]byte(fmt.Sprintf("/%s/*\n",file.Name())))
 		}
 	}
 }
