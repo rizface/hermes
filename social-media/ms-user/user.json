@@ -1,0 +1,28 @@
+{
+  "capped":              null,
+  "collation":           null,
+  "defaultIndexOptions": null,
+  "maxDocuments":        null,
+  "sizeInBytes":         null,
+  "storageEngine":       null,
+  "validationAction":    "error",
+  "validationLevel":     null,
+  "validator":           {
+    "$jsonSchema": {
+      "bsonType": "object",
+      "required": ["email", "password"],
+      "properties": {
+        "email": {
+          "bsonType": "string",
+          "description": "this is must string"
+        },
+        "password": {
+          "bsonType": "string",
+          "description": "this is must string"
+        }
+      }
+    }
+  },
+  "expireAfterSeconds":  null,
+  "timeSeriesOptions":   null
+}

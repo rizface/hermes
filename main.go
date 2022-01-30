@@ -10,6 +10,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/readpref"
 	"io/ioutil"
+	"os"
 	"strings"
 	"time"
 )
@@ -25,7 +26,7 @@ func initConfig() *config {
 	conf.password = flag.String("password", "", "password for connect to mongodb")
 	conf.host = flag.String("host", "localhost", "mongodb host")
 	conf.port = flag.String("port","27017", "mongodb port")
-	conf.dbname = flag.String("dbanme", "test", "database name")
+	conf.dbname = flag.String("dbname", "test", "database name")
 	conf.command = flag.String("command", "up", "command to execute [up / down]")
 	conf.seederPath = flag.String("path", "./seed", "seeder path")
 	conf.collectionName = flag.String("collection", "all", "collection name [all / collectionName]")
@@ -33,6 +34,29 @@ func initConfig() *config {
 	flag.Parse()
 
 	return conf
+}
+
+func appendSeeder(bucket map[string]*options.CreateCollectionOptions, collection,fileName string) map[string]*options.CreateCollectionOptions {
+	var opt *options.CreateCollectionOptions
+
+	// read seeder file
+	content,err := ioutil.ReadFile(fileName)
+	if err != nil {
+		logrus.Error(err)
+		return nil
+	}
+
+	// decode seeder file from json to *options.CreateCollectionOptions
+	err = json.Unmarshal(content,&opt)
+	if err != nil {
+		logrus.Error(err)
+		return nil
+	}
+
+	// set seeder inside map with key base on filename adn value is Unmarshal result
+	bucket[collection] = opt
+
+	return bucket
 }
 
 func readSeeder(path *string) map[string]*options.CreateCollectionOptions {
@@ -52,28 +76,19 @@ func readSeeder(path *string) map[string]*options.CreateCollectionOptions {
 			/*
 				loop and read file inside dir, except template.json file
 			*/
-			if file.Name() != "template.json" {
-				var opt *options.CreateCollectionOptions
-				// build filename & collection name
-				fileName := fmt.Sprintf("%s/%s",*path,file.Name())
-				collection := strings.Split(file.Name(),".")[0]
-
-				// read seeder file
-				content,err := ioutil.ReadFile(fileName)
-				if err != nil {
-					logrus.Error(err)
-					return nil
+			if !file.IsDir() {
+				if file.Name() != "template.json" {
+					fileName := fmt.Sprintf("%s/%s",*path,file.Name())
+					collection := strings.Split(file.Name(),".")[0]
+					appendSeeder(seeder,collection,fileName)
 				}
-
-				// decode seeder file from json to *options.CreateCollectionOptions
-				err = json.Unmarshal(content,&opt)
-				if err != nil {
-					logrus.Error(err)
-					return nil
+			} else {
+				innerFiles,_ := ioutil.ReadDir(fmt.Sprintf("./%s/%s/",*path,file.Name()))
+				for _, innerFile := range innerFiles {
+					fileName := fmt.Sprintf("%s/%s/%s",*path,file.Name(),innerFile.Name())
+					collection := strings.Split(innerFile.Name(),".")[0]
+					appendSeeder(seeder,collection,fileName)
 				}
-
-				// set seeder inside map with key base on filename adn value is Unmarshal result
-				seeder[collection] = opt
 			}
 		}
 
@@ -96,7 +111,10 @@ func db(config *config) *mongo.Database {
 
 	// connect to mongodb using uri
 	opt := options.Client().ApplyURI(uri)
-	client,err := mongo.Connect(context.Background(),opt)
+	ctx,cancel := context.WithTimeout(context.Background(),5 * time.Second)
+	defer cancel()
+
+	client,err := mongo.Connect(ctx,opt)
 	if err != nil {
 		logrus.Error(err)
 
@@ -153,9 +171,23 @@ func takeDownCollections(db *mongo.Database,collections string) {
 	}
 }
 
+func updateGitIgnore() {
+	os.Remove(".gitignore")
+	files,_ := ioutil.ReadDir("./")
+	for _, file := range files {
+		if file.IsDir() && file.Name() != "seed" && file.Name() != ".git" {
+			gitIgnore,_ := os.OpenFile(".gitignore", os.O_CREATE|os.O_APPEND|os.O_WRONLY,0666)
+			defer gitIgnore.Close()
+			gitIgnore.Write([]byte(fmt.Sprintf("./%s/\n",file.Name())))
+		}
+	}
+}
+
 func main() {
 	config := initConfig()
 	db := db(config)
+
+	updateGitIgnore()
 
 	if *config.command == "up" {
 		logrus.Info("MIGRATION STARTED ", time.Now())
